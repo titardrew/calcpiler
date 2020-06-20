@@ -18,7 +18,7 @@ test_retval() {
 }
 
 test_retval 0 0
-test_retval 99 99
-test_retval 255 255
+test_retval "99+1-5+10-3" 102
+test_retval "99+1" 100
 
 echo "Success!"
