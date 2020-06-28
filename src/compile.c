@@ -70,7 +70,7 @@ Token * tokenize(char *p) {
             continue;
         }
 
-        panic_at(p, "Lexing error. Can't figure out token. [TODO: verbose]");
+        panic_at(p, "Lexing error: Can't figure out token.");
     }
 
     create_token(TK_EOF, current_token, NULL);
@@ -130,6 +130,6 @@ int main(int argc, char *argv[]) {
         panic_at(global_token_ptr->str, "Parsing error: Wrong token");
     }
 
-    printf(" ret \n");
+    printf(" ret\n");
     return 0;
 }
