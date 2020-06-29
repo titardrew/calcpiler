@@ -146,7 +146,7 @@ Token * eat_number_token() {
 
 /* Grammar (EBNF):
      expression := mul | ("+" mul | "-" mul)*
-     mul        := unary | ("*" unary | "/" unary)*
+     mul        := unary | ("*" unary | "/" unary | "%" unary)*
      unary      := ("+" | "-")? atom
      atom       := num | "(" expression ")"
 */ 
