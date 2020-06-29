@@ -210,7 +210,9 @@ void gen_ast_node_code(AST_Node *node) {
         printf(" imul rax, rdi\n");
         break;
       case AST_DIV:
+        // cqo extends rax to rdx:rax, filling rdx bits with rax sign
         printf(" cqo\n");
+        // now, idiv performs signed division: rax := rax/rdi
         printf(" idiv rdi\n");
         break;
       default:
