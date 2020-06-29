@@ -68,7 +68,7 @@ Token * tokenize(char *p) {
         }
 
         if (*p == '-' || *p == '+' || *p == '*' || *p == '/' ||
-                *p == '(' || *p == ')') {
+                *p == '(' || *p == ')' || *p == '%') {
             current_token = create_token(TK_RESERVED, current_token, p);
             ++p;
             continue;
@@ -92,7 +92,8 @@ typedef enum AST_NodeKind {
     AST_SUB = 1,
     AST_MUL = 2,
     AST_DIV = 3,
-    AST_NUM = 4
+    AST_MOD = 4,
+    AST_NUM = 5
 } AST_NodeKind;
 
 typedef struct AST_Node{
@@ -142,8 +143,17 @@ Token * eat_number_token() {
     return num_token;
 }
 
+
+/* Grammar (EBNF):
+     expression := mul | ("+" mul | "-" mul)*
+     mul        := unary | ("*" unary | "/" unary)*
+     unary      := ("+" | "-")? atom
+     atom       := num | "(" expression ")"
+*/ 
+
 AST_Node * parse_expression();
 AST_Node * parse_mul();
+AST_Node * parse_unary();
 AST_Node * parse_atom();
 
 AST_Node * parse_expression() {
@@ -161,17 +171,30 @@ AST_Node * parse_expression() {
 }
 
 AST_Node * parse_mul() {
-    AST_Node *node = parse_atom();
+    AST_Node *node = parse_unary();
 
     while (1) {
         if (try_eat_op_token('*')) {
-            node = create_ast_op_node(AST_MUL, node, parse_atom());
+            node = create_ast_op_node(AST_MUL, node, parse_unary());
         } else if (try_eat_op_token('/')) {
-            node = create_ast_op_node(AST_DIV, node, parse_atom());
+            node = create_ast_op_node(AST_DIV, node, parse_unary());
+        } else if (try_eat_op_token('%')) {
+            node = create_ast_op_node(AST_MOD, node, parse_unary());
         } else {
             return node;
         }
     }
+}
+
+AST_Node * parse_unary() {
+    if (try_eat_op_token('+')) {
+        return parse_atom();  // noop
+    }
+    if (try_eat_op_token('-')) {
+        return create_ast_op_node(
+            AST_SUB, create_ast_num_node(0), parse_atom());
+    }
+    return parse_atom();
 }
 
 AST_Node * parse_atom() {
@@ -212,11 +235,16 @@ void gen_ast_node_code(AST_Node *node) {
       case AST_DIV:
         // cqo extends rax to rdx:rax, filling rdx bits with rax sign
         printf(" cqo\n");
-        // now, idiv performs signed division: rax := rax/rdi
+        // now, idiv performs signed division: rax:=rax/rdi, rdx:=rax%rdi
         printf(" idiv rdi\n");
         break;
+      case AST_MOD:
+        printf(" cqo\n");
+        printf(" idiv rdi\n");
+        printf(" mov rax, rdx\n");
+        break;
       default:
-        panic("Internall error in gen_ast_node_code(AST_Node *)");
+        panic("Internal error in gen_ast_node_code(AST_Node *)");
     }
     printf(" push rax\n");
 }
