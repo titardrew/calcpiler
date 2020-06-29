@@ -47,5 +47,9 @@ test_retval "-( -3 + 8)/-5" 1
 test_retval "99 ++ 1" 100
 # Mod:
 test_retval "100 % 3" 1
+# Comparison:
+test_retval "(10 > 3) + (1 + 9 <= 10) != 1" 1 
+test_retval "2 + 1 == -1 + 4 " 1 
+test_retval "(1 != 1) >= 1" 0 
 
 echo "Success!"

@@ -2,6 +2,8 @@
 #include "stdlib.h"
 #include "stdarg.h"
 #include "ctype.h"
+#include "stdbool.h"
+#include "string.h"
 
 char *global_code;
 
@@ -31,6 +33,9 @@ void panic_at(char *location, char *reason, ...) {
     exit(1);
 }
 
+bool has_prefix(char *str, const char *prefix) {
+    return memcmp(prefix, str, strlen(prefix)) == 0;
+}
 
 typedef enum TokenKind {
     TK_RESERVED = 0,
@@ -45,45 +50,62 @@ typedef struct Token {
     TokenKind kind;
     int num_val;
     char *str;
+    int len;
     struct Token *next;
 } Token;
 
-Token * create_token(TokenKind kind, Token *current_token, char *str) {
+Token * create_token(TokenKind kind, Token *current_token, char *str, int len) {
     Token *new_token = (Token *)calloc(1, sizeof(Token));
     new_token->kind = kind;
     new_token->str = str;
+    new_token->len = len;
     current_token->next = new_token;
-    return new_token;  // now it is current
+    return new_token;
 }
 
 Token * tokenize(char *p) {
     Token head;
     head.next = NULL;
+    head.len = 0;  // C99 does not allow struct init :(
     Token *current_token = &head;
+    size_t chars_left = strlen(p);
 
     while (*p) {
+        chars_left -= current_token->len;
+
         if (isspace(*p)) {
             ++p;
             continue;
         }
 
-        if (*p == '-' || *p == '+' || *p == '*' || *p == '/' ||
-                *p == '(' || *p == ')' || *p == '%') {
-            current_token = create_token(TK_RESERVED, current_token, p);
+        // 2-char ops
+        if (chars_left >= 2 && (
+                has_prefix(p, "<=") || has_prefix(p, ">=") ||
+                has_prefix(p, "==") || has_prefix(p, "!="))) {
+            current_token = create_token(TK_RESERVED, current_token, p, 2);
+            p += 2;
+            continue;
+        }
+
+        // 1-char ops
+        if (chars_left >= 1 && strchr("()+-*/%<>", *p)) {
+            current_token = create_token(TK_RESERVED, current_token, p, 1);
             ++p;
             continue;
         }
 
         if (isdigit(*p)) {
-            current_token = create_token(TK_NUM, current_token, p);
-            current_token->num_val = strtol(p, &p, 10);
+            current_token = create_token(TK_NUM, current_token, p, 0);
+            char *num_begin = p;
+            current_token->num_val = strtol(num_begin, &p, 10);
+            current_token->len = p - num_begin;
             continue;
         }
 
         panic_at(p, "Lexing error: Can't figure out token.");
     }
 
-    create_token(TK_EOF, current_token, NULL);
+    create_token(TK_EOF, current_token, NULL, 0);
     return head.next;
 }
 
@@ -93,6 +115,10 @@ typedef enum AST_NodeKind {
     AST_MUL = 2,
     AST_DIV = 3,
     AST_MOD = 4,
+    AST_GE  = 5, // >=
+    AST_GR  = 6, // >
+    AST_EQ  = 7, // ==
+    AST_NEQ = 8, // !=
     AST_NUM = 5
 } AST_NodeKind;
 
@@ -121,9 +147,10 @@ AST_Node * create_ast_num_node(int num_val) {
 
 Token *global_token_ptr;
 
-Status try_eat_op_token(char op) {
+Status try_eat_op_token(char* op) {
     if (global_token_ptr->kind != TK_RESERVED ||
-          *global_token_ptr->str != op) {
+          strlen(op) != global_token_ptr->len ||
+          memcmp(global_token_ptr->str, op, global_token_ptr->len)) {
         return FAILURE;
     }
     global_token_ptr = global_token_ptr->next;
@@ -145,24 +172,66 @@ Token * eat_number_token() {
 
 
 /* Grammar (EBNF):
-     expression := mul | ("+" mul | "-" mul)*
-     mul        := unary | ("*" unary | "/" unary | "%" unary)*
+     expression := equality
+     equality   := comparison ("==" comparison | "!=" comparison)*
+     comparison := add ("<" add | ">" add | "<=" add | ">=" add)*
+     add        := mul ("+" mul | "-" mul)*
+     mul        := unary ("*" unary | "/" unary | "%" unary)*
      unary      := ("+" | "-")? atom
      atom       := num | "(" expression ")"
 */ 
 
 AST_Node * parse_expression();
+AST_Node * parse_equality();
+AST_Node * parse_comparison();
+AST_Node * parse_add();
 AST_Node * parse_mul();
 AST_Node * parse_unary();
 AST_Node * parse_atom();
 
-AST_Node * parse_expression() {
+AST_Node * parse_expression() {  // to match the grammar
+    return parse_equality();
+}
+
+AST_Node * parse_equality() {
+    AST_Node *node = parse_comparison();
+
+    while (1) {
+        if (try_eat_op_token("==")) {
+            node = create_ast_op_node(AST_EQ, node, parse_comparison());
+        } else if (try_eat_op_token("!=")) {
+            node = create_ast_op_node(AST_NEQ, node, parse_comparison());
+        } else {
+            return node;
+        }
+    }
+}
+
+AST_Node * parse_comparison() {
+    AST_Node *node = parse_add();
+
+    while (1) {
+        if (try_eat_op_token(">")) {
+            node = create_ast_op_node(AST_GR, node, parse_add());
+        } else if (try_eat_op_token("<=")) {
+            node = create_ast_op_node(AST_GE, node, parse_add());
+        } else if (try_eat_op_token("<")) {
+            node = create_ast_op_node(AST_GR, parse_add(), node);
+        } else if (try_eat_op_token(">=")) {
+            node = create_ast_op_node(AST_GE, parse_add(), node);
+        } else {
+            return node;
+        }
+    }
+}
+
+AST_Node * parse_add() {
     AST_Node *node = parse_mul();
 
     while (1) {
-        if (try_eat_op_token('+')) {
+        if (try_eat_op_token("+")) {
             node = create_ast_op_node(AST_ADD, node, parse_mul());
-        } else if (try_eat_op_token('-')) {
+        } else if (try_eat_op_token("-")) {
             node = create_ast_op_node(AST_SUB, node, parse_mul());
         } else {
             return node;
@@ -174,11 +243,11 @@ AST_Node * parse_mul() {
     AST_Node *node = parse_unary();
 
     while (1) {
-        if (try_eat_op_token('*')) {
+        if (try_eat_op_token("*")) {
             node = create_ast_op_node(AST_MUL, node, parse_unary());
-        } else if (try_eat_op_token('/')) {
+        } else if (try_eat_op_token("/")) {
             node = create_ast_op_node(AST_DIV, node, parse_unary());
-        } else if (try_eat_op_token('%')) {
+        } else if (try_eat_op_token("%")) {
             node = create_ast_op_node(AST_MOD, node, parse_unary());
         } else {
             return node;
@@ -187,10 +256,10 @@ AST_Node * parse_mul() {
 }
 
 AST_Node * parse_unary() {
-    if (try_eat_op_token('+')) {
+    if (try_eat_op_token("+")) {
         return parse_atom();  // noop
     }
-    if (try_eat_op_token('-')) {
+    if (try_eat_op_token("-")) {
         return create_ast_op_node(
             AST_SUB, create_ast_num_node(0), parse_atom());
     }
@@ -198,9 +267,9 @@ AST_Node * parse_unary() {
 }
 
 AST_Node * parse_atom() {
-    if (try_eat_op_token('(')) {
+    if (try_eat_op_token("(")) {
         AST_Node *node = parse_expression();
-        if (try_eat_op_token(')')) {
+        if (try_eat_op_token(")")) {
             return node;
         } else {
             panic_at(global_token_ptr->str,
@@ -242,6 +311,26 @@ void gen_ast_node_code(AST_Node *node) {
         printf(" cqo\n");
         printf(" idiv rdi\n");
         printf(" mov rax, rdx\n");
+        break;
+      case AST_EQ:
+        printf(" cmp rdi, rax\n");
+        printf(" sete al\n"); // al - first 8 bits of rax
+        printf(" movzx rax, al\n"); // movzx->movzb for linux
+        break;
+      case AST_NEQ:
+        printf(" cmp rdi, rax\n");
+        printf(" setne al\n");
+        printf(" movzx rax, al\n");
+        break;
+      case AST_GR:
+        printf(" cmp rdi, rax\n");
+        printf(" setg al\n");
+        printf(" movzx rax, al\n");
+        break;
+      case AST_GE:
+        printf(" cmp rdi, rax\n");
+        printf(" setge al\n");
+        printf(" movzx rax, al\n");
         break;
       default:
         panic("Internal error in gen_ast_node_code(AST_Node *)");
