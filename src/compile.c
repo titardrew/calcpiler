@@ -10,6 +10,14 @@ typedef enum Status {
     SUCCESS = 1
 } Status;
 
+void panic(char *reason, ...) {
+    va_list ap;
+    va_start(ap, reason);
+    vfprintf(stderr, reason, ap);
+    fprintf(stderr, "\n");
+    exit(1);
+}
+
 void panic_at(char *location, char *reason, ...) {
     va_list ap;
     va_start(ap, reason);
@@ -23,6 +31,7 @@ void panic_at(char *location, char *reason, ...) {
     exit(1);
 }
 
+
 typedef enum TokenKind {
     TK_RESERVED = 0,
     TK_NUM = 1,
@@ -34,7 +43,7 @@ const char *global_tk_repr[] = {
 
 typedef struct Token {
     TokenKind kind;
-    long int num_val;
+    int num_val;
     char *str;
     struct Token *next;
 } Token;
@@ -58,7 +67,8 @@ Token * tokenize(char *p) {
             continue;
         }
 
-        if (*p == '-' || *p == '+') {
+        if (*p == '-' || *p == '+' || *p == '*' || *p == '/' ||
+                *p == '(' || *p == ')') {
             current_token = create_token(TK_RESERVED, current_token, p);
             ++p;
             continue;
@@ -75,6 +85,37 @@ Token * tokenize(char *p) {
 
     create_token(TK_EOF, current_token, NULL);
     return head.next;
+}
+
+typedef enum AST_NodeKind {
+    AST_ADD = 0,
+    AST_SUB = 1,
+    AST_MUL = 2,
+    AST_DIV = 3,
+    AST_NUM = 4
+} AST_NodeKind;
+
+typedef struct AST_Node{
+    AST_NodeKind kind;
+    int num_val;
+    struct AST_Node *left;
+    struct AST_Node *right;
+} AST_Node;
+
+AST_Node * create_ast_op_node(AST_NodeKind kind,
+        AST_Node *left, AST_Node *right) {
+    AST_Node *node = (AST_Node *)calloc(1, sizeof(AST_Node));
+    node->kind = kind;
+    node->left = left;
+    node->right = right;
+    return node;
+}
+
+AST_Node * create_ast_num_node(int num_val) {
+    AST_Node *node = (AST_Node *)calloc(1, sizeof(AST_Node));
+    node->kind = AST_NUM;
+    node->num_val = num_val;
+    return node;
 }
 
 Token *global_token_ptr;
@@ -101,6 +142,83 @@ Token * eat_number_token() {
     return num_token;
 }
 
+AST_Node * parse_expression();
+AST_Node * parse_mul();
+AST_Node * parse_atom();
+
+AST_Node * parse_expression() {
+    AST_Node *node = parse_mul();
+
+    while (1) {
+        if (try_eat_op_token('+')) {
+            node = create_ast_op_node(AST_ADD, node, parse_mul());
+        } else if (try_eat_op_token('-')) {
+            node = create_ast_op_node(AST_SUB, node, parse_mul());
+        } else {
+            return node;
+        }
+    }
+}
+
+AST_Node * parse_mul() {
+    AST_Node *node = parse_atom();
+
+    while (1) {
+        if (try_eat_op_token('*')) {
+            node = create_ast_op_node(AST_MUL, node, parse_atom());
+        } else if (try_eat_op_token('/')) {
+            node = create_ast_op_node(AST_DIV, node, parse_atom());
+        } else {
+            return node;
+        }
+    }
+}
+
+AST_Node * parse_atom() {
+    if (try_eat_op_token('(')) {
+        AST_Node *node = parse_expression();
+        if (try_eat_op_token(')')) {
+            return node;
+        } else {
+            panic_at(global_token_ptr->str,
+                     "Parsing error: Wrong token [Expected ')']");
+        }
+    }
+    return create_ast_num_node(eat_number_token()->num_val);
+}
+
+void gen_ast_node_code(AST_Node *node) {
+    if (node->kind == AST_NUM) {
+        printf(" push %d\n", node->num_val);
+        return;
+    }
+
+    gen_ast_node_code(node->left);
+    gen_ast_node_code(node->right);
+
+    printf(" pop rdi\n");
+    printf(" pop rax\n");
+    
+    switch (node->kind) {
+      case AST_ADD:
+        printf(" add rax, rdi\n");
+        break;
+      case AST_SUB:
+        printf(" sub rax, rdi\n");
+        break;
+      case AST_MUL:
+        printf(" imul rax, rdi\n");
+        break;
+      case AST_DIV:
+        printf(" cqo\n");
+        printf(" idiv rdi\n");
+        break;
+      default:
+        panic("Internall error in gen_ast_node_code(AST_Node *)");
+    }
+    printf(" push rax\n");
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Not enough arguments\n");
@@ -109,27 +227,15 @@ int main(int argc, char *argv[]) {
 
     global_code = argv[1];
     global_token_ptr = tokenize(global_code);
+    AST_Node *ast_head = parse_expression();
 
     printf(".intel_syntax_noprefix\n");
     printf(".globl _main\n");
     printf("_main:\n");
 
-    printf(" mov rax, %ld\n", eat_number_token()->num_val);
+    gen_ast_node_code(ast_head);
 
-    while (global_token_ptr->kind != TK_EOF) {
-        if (try_eat_op_token('+')) {
-            printf(" add rax, %ld\n", eat_number_token()->num_val);
-            continue;
-        }
-
-        if (try_eat_op_token('-')) {
-            printf(" sub rax, %ld\n", eat_number_token()->num_val);
-            continue;
-        }
-
-        panic_at(global_token_ptr->str, "Parsing error: Wrong token");
-    }
-
+    printf(" pop rax\n");
     printf(" ret\n");
     return 0;
 }

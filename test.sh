@@ -37,5 +37,9 @@ test_retval "99+1-5+10-3" 102
 test_retval " 99 + 1 - 9 +    9 " 100
 test_comp "99 ++ 1" 1
 test_comp "99 # 1" 1
+test_retval "5 + 6*7" 47
+test_retval "5*(9 - 6)" 15
+test_retval "(3 + 5)/2" 4
+test_comp "[5 + 1]#2" 1
 
 echo "Success!"
