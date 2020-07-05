@@ -58,9 +58,6 @@ test_retval "2 + 1 == -1 + 4 ;" 1
 test_retval "(1 != 1) >= 1;" 0 
 # Variables:
 test_retval "a = 3 * 5;" 15
-test_retval "
-a = 3 * 5;
-b = a + a / 5;
-b;" 18
+test_retval "var1 = 3 * 5; var_2 = var1 + var1 / 5; var_2;" 18
 
 echo "Success!"

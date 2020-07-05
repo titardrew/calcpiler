@@ -2,11 +2,24 @@
 #include "stdlib.h"
 #include "ctype.h"
 #include "string.h"
+#include "stdbool.h"
 
 #include "lexer.h"
 #include "utils.h"
 
-Token * create_token(TokenKind kind, Token *current_token, char *str, int len) {
+static inline bool is_ident_char(char c) {
+    return isalpha(c) || c == '_';
+}
+
+static int read_ident(char *start, char **dst) {
+    char *p;
+    for (p = start; is_ident_char(*p) || isdigit(*p); ++p);
+    *dst = p;
+    return p - start;
+}
+
+Token * create_token(TokenKind kind, Token *current_token,
+                     char *str, int len) {
     Token *new_token = (Token *)calloc(1, sizeof(Token));
     new_token->kind = kind;
     new_token->str = str;
@@ -32,13 +45,24 @@ Token * tokenize(char *code) {
         }
         chars_left -= current_token->len;
 
+        // Identifier
+        if (chars_left >= 1 && is_ident_char(*p)) {
+            current_token = create_token(TK_IDENT, current_token, p, 0);
+            char *num_begin = p;
+            current_token->len = read_ident(num_begin, &p);
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "TK_IDENT[%.*s]->", current_token->len, num_begin);
+#endif
+            continue;
+        }
+
         // 2-char ops
         if (chars_left >= 2 && (
                 has_prefix(p, "<=") || has_prefix(p, ">=") ||
                 has_prefix(p, "==") || has_prefix(p, "!="))) {
             current_token = create_token(TK_RESERVED, current_token, p, 2);
 #ifdef DEBUG_LEXER
-            fprintf(stderr, "TK_RESERVED[%c%c]->", p[0], p[1]);
+            fprintf(stderr, "TK_RESERVED[%.*s]->", 2, p);
 #endif
             p += 2;
             continue;
@@ -49,15 +73,6 @@ Token * tokenize(char *code) {
             current_token = create_token(TK_RESERVED, current_token, p, 1);
 #ifdef DEBUG_LEXER
             fprintf(stderr, "TK_RESERVED[%c]->", p[0]);
-#endif
-            ++p;
-            continue;
-        }
-        // 1-char identif
-        if (chars_left >= 1 && *p >= 'a' && *p <= 'z') {
-            current_token = create_token(TK_IDENT, current_token, p, 1);
-#ifdef DEBUG_LEXER
-            fprintf(stderr, "TK_IDENT[%c]->", p[0]);
 #endif
             ++p;
             continue;

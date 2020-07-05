@@ -27,6 +27,13 @@ typedef struct AST_Node {
     struct AST_Node *right;
 } AST_Node;
 
+typedef struct Variable {
+    char *name;
+    int len;
+    int stack_offset;
+    struct Variable *next;
+} Variable;
+
 AST_Node ** parse_unit(char *code, Token *tokens);
 
 #endif // PARSER_H

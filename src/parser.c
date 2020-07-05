@@ -2,12 +2,23 @@
 #include "stdlib.h"
 #include "string.h"
 
-//#include "gen.h"
 #include "parser.h"
 #include "utils.h"
 
-Token *global_token_ptr;
-char  *global_code;
+Token    *global_token_ptr;
+char     *global_code;
+Variable *global_locals;
+
+static Variable * find_local_variable(Token *tk) {
+    Variable *cur = global_locals;
+    while (cur) {
+        if (cur->len == tk->len && !memcmp(cur->name, tk->str, tk->len)) {
+            return cur;
+        }
+        cur = cur->next;
+    }
+    return NULL;
+}
 
 static AST_Node * create_ast_op_node(AST_NodeKind kind,
         AST_Node *left, AST_Node *right) {
@@ -18,12 +29,26 @@ static AST_Node * create_ast_op_node(AST_NodeKind kind,
     return node;
 }
 
-static AST_Node * create_ast_ident_node(int offset) {
+static AST_Node * create_ast_ident_node(Token *tk) {
     AST_Node *node = (AST_Node *)calloc(1, sizeof(AST_Node));
     node->kind = AST_LVALUE;
-    node->stack_offset = offset;
     node->left = NULL;
     node->right = NULL;
+
+    Variable *var = find_local_variable(tk);
+    if (var) {
+        node->stack_offset = var->stack_offset;
+    } else {
+        node->stack_offset = global_locals->stack_offset + 8;
+
+        var = (Variable *)calloc(1, sizeof(Variable));
+        var->name = tk->str;
+        var->len = tk->len;
+        var->stack_offset = node->stack_offset;
+        var->next = global_locals;
+
+        global_locals = var;
+    }
     return node;
 }
 
@@ -91,10 +116,15 @@ static AST_Node * parse_mul();
 static AST_Node * parse_unary();
 static AST_Node * parse_atom();
 
+// unit := statement*
 AST_Node ** parse_unit(char *code, Token *tokens) {
     AST_Node **ast_forest = (AST_Node **)malloc(sizeof(AST_Node *)*100);
+    Variable var_head;
+    var_head.stack_offset = 0;
+
     global_code = code;
     global_token_ptr = tokens;
+    global_locals = &var_head;
 
     int i = 0;
     while (global_token_ptr->kind != TK_EOF) {
@@ -115,7 +145,6 @@ static AST_Node * parse_statement() {
         );
     }
     return node;
-    
 }
 
 // expression := assign
@@ -214,7 +243,7 @@ static AST_Node * parse_unary() {
 static AST_Node * parse_atom() {
     Token * tk = try_eat_ident_token();
     if (tk) {
-        return create_ast_ident_node((tk->str[0] - 'a' + 1) * 8);
+        return create_ast_ident_node(tk);
     }
     if (try_eat_op_token("(")) {
         AST_Node *node = parse_expression();
