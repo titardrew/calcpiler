@@ -3,8 +3,9 @@
 
 typedef enum TokenKind {
     TK_RESERVED = 0,
-    TK_NUM = 1,
-    TK_EOF = 2
+    TK_IDENT    = 1,
+    TK_NUM      = 2,
+    TK_EOF      = 3
 } TokenKind;
 
 typedef struct Token {
@@ -16,8 +17,8 @@ typedef struct Token {
 } Token;
 
 static const char *global_tk_repr[] = {
-    "Reserved", "Number", "End Of File"};
+    "Reserved", "Identifier", "Number", "End Of File"};
 
 Token * tokenize(char *code);
 
-#endif
+#endif // LEXER_H

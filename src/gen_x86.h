@@ -4,6 +4,6 @@
 #include "parser.h"
 
 void gen_ast_node_code(AST_Node *node);
-void gen_code(AST_Node *ast_head);
+void gen_code(AST_Node **ast_forest);
 
 #endif // GEN_H

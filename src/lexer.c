@@ -24,25 +24,41 @@ Token * tokenize(char *code) {
     size_t chars_left = strlen(p);
 
     while (*p) {
-        chars_left -= current_token->len;
 
         if (isspace(*p)) {
             ++p;
+            --chars_left;
             continue;
         }
+        chars_left -= current_token->len;
 
         // 2-char ops
         if (chars_left >= 2 && (
                 has_prefix(p, "<=") || has_prefix(p, ">=") ||
                 has_prefix(p, "==") || has_prefix(p, "!="))) {
             current_token = create_token(TK_RESERVED, current_token, p, 2);
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "TK_RESERVED[%c%c]->", p[0], p[1]);
+#endif
             p += 2;
             continue;
         }
 
         // 1-char ops
-        if (chars_left >= 1 && strchr("()+-*/%<>", *p)) {
+        if (chars_left >= 1 && strchr("()+-*/%<>=;", *p)) {
             current_token = create_token(TK_RESERVED, current_token, p, 1);
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "TK_RESERVED[%c]->", p[0]);
+#endif
+            ++p;
+            continue;
+        }
+        // 1-char identif
+        if (chars_left >= 1 && *p >= 'a' && *p <= 'z') {
+            current_token = create_token(TK_IDENT, current_token, p, 1);
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "TK_IDENT[%c]->", p[0]);
+#endif
             ++p;
             continue;
         }
@@ -52,12 +68,21 @@ Token * tokenize(char *code) {
             char *num_begin = p;
             current_token->num_val = strtol(num_begin, &p, 10);
             current_token->len = p - num_begin;
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "TK_NUM[%d]->", current_token->num_val);
+#endif
             continue;
         }
 
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "\n");
+#endif
         panic_at(p, code, "Lexing error: Can't figure out token.");
     }
 
-    create_token(TK_EOF, current_token, NULL, 0);
+    create_token(TK_EOF, current_token, p-1, 0);
+#ifdef DEBUG_LEXER
+            fprintf(stderr, "TK_EOF\n");
+#endif
     return head.next;
 }

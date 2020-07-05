@@ -1,6 +1,6 @@
 #include "stdio.h"
 
-#include "gen.h"
+#include "gen_x86.h"
 #include "lexer.h"
 #include "parser.h"
 
@@ -12,8 +12,8 @@ int main(int argc, char *argv[]) {
     char *code = argv[1];
 
     Token *tokens = tokenize(code);
-    AST_Node *ast_head = parse_code(code, tokens);
-    gen_code(ast_head);
+    AST_Node **ast_forest = parse_unit(code, tokens);
+    gen_code(ast_forest);
 
     return 0;
 }

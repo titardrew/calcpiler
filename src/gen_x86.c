@@ -1,13 +1,40 @@
 #include "stdio.h"
 #include "stdlib.h"
 
-#include "gen.h"
+#include "gen_x86.h"
 #include "utils.h"
 
+static void push_address(int stack_offset) {
+    printf(" mov rax, rbp\n");
+    printf(" sub rax, %d\n", stack_offset);
+    printf(" push rax\n");
+}
+
 void gen_ast_node_code(AST_Node *node) {
-    if (node->kind == AST_NUM) {
+    switch (node->kind) {
+      case AST_NUM:
         printf(" push %d\n", node->num_val);
         return;
+      case AST_LVALUE:
+        push_address(node->stack_offset);
+        printf(" pop rax\n");
+        printf(" mov rax, [rax]\n");
+        printf(" push rax\n");
+        return;
+      case AST_ASSIGN:
+        if (node->left->kind != AST_LVALUE) {
+            panic("Generation error: Can only assign to an l-value");
+        }
+        push_address(node->left->stack_offset);
+        gen_ast_node_code(node->right);
+
+        printf(" pop rdi\n");
+        printf(" pop rax\n");
+        printf(" mov [rax], rdi\n");
+        printf(" push rdi\n");
+        return;
+      default:
+        break;
     }
 
     gen_ast_node_code(node->left);
@@ -63,11 +90,27 @@ void gen_ast_node_code(AST_Node *node) {
     printf(" push rax\n");
 }
 
-void gen_code(AST_Node *ast_head) {
+static void stack_prologue() {
+    printf(" push rbp\n");
+    printf(" mov rbp, rsp\n");
+    printf(" sub rsp, 208\n");
+}
+
+static void stack_epilogue() {
+    printf(" mov rsp, rbp\n");
+    printf(" pop rbp\n");
+    printf(" ret\n");
+}
+
+void gen_code(AST_Node **ast_forest) {
     printf(".intel_syntax_noprefix\n");
     printf(".globl _main\n");
     printf("_main:\n");
-    gen_ast_node_code(ast_head);
-    printf(" pop rax\n");
-    printf(" ret\n");
+
+    stack_prologue();
+    for (int i = 0; ast_forest[i] != NULL; i++) {
+        gen_ast_node_code(ast_forest[i]);
+        printf(" pop rax\n");
+    }
+    stack_epilogue();
 }

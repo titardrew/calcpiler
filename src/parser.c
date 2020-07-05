@@ -2,7 +2,7 @@
 #include "stdlib.h"
 #include "string.h"
 
-#include "gen.h"
+//#include "gen.h"
 #include "parser.h"
 #include "utils.h"
 
@@ -18,10 +18,21 @@ static AST_Node * create_ast_op_node(AST_NodeKind kind,
     return node;
 }
 
+static AST_Node * create_ast_ident_node(int offset) {
+    AST_Node *node = (AST_Node *)calloc(1, sizeof(AST_Node));
+    node->kind = AST_LVALUE;
+    node->stack_offset = offset;
+    node->left = NULL;
+    node->right = NULL;
+    return node;
+}
+
 static AST_Node * create_ast_num_node(int num_val) {
     AST_Node *node = (AST_Node *)calloc(1, sizeof(AST_Node));
     node->kind = AST_NUM;
     node->num_val = num_val;
+    node->left = NULL;
+    node->right = NULL;
     return node;
 }
 
@@ -33,6 +44,15 @@ static Status try_eat_op_token(char *op) {
     }
     global_token_ptr = global_token_ptr->next;
     return SUCCESS;
+}
+
+static Token * try_eat_ident_token() {
+    Token *tk = NULL;
+    if (global_token_ptr->kind == TK_IDENT) {
+        tk = global_token_ptr;
+        global_token_ptr = global_token_ptr->next;
+    }
+    return tk;
 }
 
 static Token * eat_number_token() {
@@ -49,16 +69,21 @@ static Token * eat_number_token() {
 }
 
 /* Grammar (EBNF):
-     expression := equality
+     unit       := statement*
+     statement  := expression ";"
+     expression := assign
+     assign     := equality ("=" assign)?
      equality   := comparison ("==" comparison | "!=" comparison)*
      comparison := add ("<" add | ">" add | "<=" add | ">=" add)*
      add        := mul ("+" mul | "-" mul)*
      mul        := unary ("*" unary | "/" unary | "%" unary)*
      unary      := ("+" | "-")? atom
-     atom       := num | "(" expression ")"
+     atom       := num | identifier | "(" expression ")"
 */ 
 
+static AST_Node * parse_statement();
 static AST_Node * parse_expression();
+static AST_Node * parse_assign();
 static AST_Node * parse_equality();
 static AST_Node * parse_comparison();
 static AST_Node * parse_add();
@@ -66,9 +91,45 @@ static AST_Node * parse_mul();
 static AST_Node * parse_unary();
 static AST_Node * parse_atom();
 
-// expression := equality
-static AST_Node * parse_expression() {  // to match the grammar
-    return parse_equality();
+AST_Node ** parse_unit(char *code, Token *tokens) {
+    AST_Node **ast_forest = (AST_Node **)malloc(sizeof(AST_Node *)*100);
+    global_code = code;
+    global_token_ptr = tokens;
+
+    int i = 0;
+    while (global_token_ptr->kind != TK_EOF) {
+        ast_forest[i++] = parse_statement();
+    }
+    ast_forest[i] = NULL;
+    return ast_forest;
+}
+
+// statement := expression ";"
+static AST_Node * parse_statement() {
+    AST_Node *node = parse_expression();
+    if (!try_eat_op_token(";")) {
+        panic_at(
+            global_token_ptr->str, global_code,
+            "Parsing error: Wrong Token (Got %s, expected %s[';'])",
+            global_tk_repr[global_token_ptr->kind], global_tk_repr[TK_RESERVED]
+        );
+    }
+    return node;
+    
+}
+
+// expression := assign
+static AST_Node * parse_expression() {
+    return parse_assign();
+}
+
+// assign := equality ("=" assign)?
+static AST_Node * parse_assign() {
+    AST_Node *node = parse_equality();
+    if (try_eat_op_token("=")) {
+        node = create_ast_op_node(AST_ASSIGN, node, parse_assign());
+    }
+    return node;
 }
 
 // equality := comparison ("==" comparison | "!=" comparison)* 
@@ -92,13 +153,13 @@ static AST_Node * parse_comparison() {
 
     while (1) {
         if (try_eat_op_token(">")) {
-            node = create_ast_op_node(AST_GR, node, parse_add());
-        } else if (try_eat_op_token("<=")) {
-            node = create_ast_op_node(AST_GE, node, parse_add());
-        } else if (try_eat_op_token("<")) {
             node = create_ast_op_node(AST_GR, parse_add(), node);
         } else if (try_eat_op_token(">=")) {
             node = create_ast_op_node(AST_GE, parse_add(), node);
+        } else if (try_eat_op_token("<")) {
+            node = create_ast_op_node(AST_GR, node, parse_add());
+        } else if (try_eat_op_token("<=")) {
+            node = create_ast_op_node(AST_GE, node, parse_add());
         } else {
             return node;
         }
@@ -149,8 +210,12 @@ static AST_Node * parse_unary() {
     return parse_atom();
 }
 
-// atom := num | "(" expression ")"
+// atom := num | identifier | "(" expression ")"
 static AST_Node * parse_atom() {
+    Token * tk = try_eat_ident_token();
+    if (tk) {
+        return create_ast_ident_node((tk->str[0] - 'a' + 1) * 8);
+    }
     if (try_eat_op_token("(")) {
         AST_Node *node = parse_expression();
         if (try_eat_op_token(")")) {
@@ -163,10 +228,4 @@ static AST_Node * parse_atom() {
         }
     }
     return create_ast_num_node(eat_number_token()->num_val);
-}
-
-AST_Node * parse_code(char *code, Token *tokens) {
-    global_code = code;
-    global_token_ptr = tokens;
-    return parse_expression();
 }
