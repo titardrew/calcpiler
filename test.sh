@@ -58,6 +58,13 @@ test_retval "2 + 1 == -1 + 4 ;" 1
 test_retval "(1 != 1) >= 1;" 0 
 # Variables:
 test_retval "a = 3 * 5;" 15
-test_retval "var1 = 3 * 5; var_2 = var1 + var1 / 5; var_2;" 18
+test_retval "var1 = 3 * 5; var_2 = var1 + var1 / 5; return var_2;" 18
+# If-else:
+test_retval "v1 = 5; v2 = 6; if (v1 < v2) return v2; else v2 = 20; return v2;" 6
+test_retval "v1 = 5; v2 = 6; if (v1 > v2) return v2; else v2 = 20; return v2;" 20
+# Loops:
+test_retval "v1 = 1; while (v1 < 10) v1 = v1 + 1; return v1;" 10
+test_retval "v1 = 0; for (i=1; i<10; i=i+1) v1 = v1 + i; return v1;" 45
+test_retval "i = 1; for (;i<10;) i = i + 1; return i;" 10
 
 echo "Success!"

@@ -16,8 +16,18 @@ typedef enum AST_NodeKind {
     AST_NUM = 9,
 
     AST_ASSIGN = 10, // =
-    AST_LVALUE = 11
+    AST_LVALUE = 11,
+    AST_RET    = 12,  // return
+    AST_IF     = 13,  // if-else
+    AST_WHILE  = 14,  // while loop
+    AST_FOR    = 15   // for loop
 } AST_NodeKind;
+
+static char *global_node_kind[] = {
+    "ADD", "SUB", "MUL", "DIV",
+    "MOD", "GE", "GR", "EQ", "NEQ",
+    "NUM", "ASSIGN", "LVALUE", "RET",
+    "IF", "WHILE", "FOR"};
 
 typedef struct AST_Node {
     AST_NodeKind kind;
@@ -25,6 +35,9 @@ typedef struct AST_Node {
     int stack_offset;
     struct AST_Node *left;
     struct AST_Node *right;
+    struct AST_Node *cond;
+    struct AST_Node *init;
+
 } AST_Node;
 
 typedef struct Variable {

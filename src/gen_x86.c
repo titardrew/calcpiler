@@ -4,14 +4,81 @@
 #include "gen_x86.h"
 #include "utils.h"
 
+static int global_label_counter = 0;
+
 static void push_address(int stack_offset) {
     printf(" mov rax, rbp\n");
     printf(" sub rax, %d\n", stack_offset);
     printf(" push rax\n");
 }
 
+static void stack_prologue(int stack_size) {
+    printf(" push rbp\n");
+    printf(" mov rbp, rsp\n");
+    printf(" sub rsp, %d\n", stack_size);
+}
+
+static void stack_epilogue() {
+    printf(".L.ret:\n");
+    printf(" mov rsp, rbp\n");
+    printf(" pop rbp\n");
+    printf(" ret\n");
+}
+
 void gen_ast_node_code(AST_Node *node) {
+    int lbl_cnt;
     switch (node->kind) {
+      case AST_RET:
+        gen_ast_node_code(node->left);
+        printf(" pop rax\n");
+        printf(" jmp .L.ret\n");
+        return;
+      case AST_IF:
+        lbl_cnt = global_label_counter++;
+        gen_ast_node_code(node->cond);
+        printf(" pop rax\n");
+        printf(" cmp rax, 0\n");
+        printf(" je .L.B1_%d\n", lbl_cnt);
+        gen_ast_node_code(node->left);
+        if (node->right) {
+            printf(" jmp .L.B2_%d\n", lbl_cnt);
+        }
+        printf(".L.B1_%d:\n", lbl_cnt);
+        if (node->right) {
+            gen_ast_node_code(node->right);
+            printf(".L.B2_%d:\n", lbl_cnt);
+        }
+        return;
+      case AST_WHILE:
+        lbl_cnt = global_label_counter++;
+        printf(".L.B0_%d:\n", lbl_cnt);
+        gen_ast_node_code(node->cond);
+        printf(" pop rax\n");
+        printf(" cmp rax, 0\n");
+        printf(" je .L.B1_%d\n", lbl_cnt);
+        gen_ast_node_code(node->left);
+        printf(" jmp .L.B0_%d\n", lbl_cnt);
+        printf(".L.B1_%d:\n", lbl_cnt);
+        return;
+      case AST_FOR:
+        lbl_cnt = global_label_counter++;
+        if (node->init) {
+            gen_ast_node_code(node->init);
+        }
+        printf(".L.B0_%d:\n", lbl_cnt);
+        if (node->cond) {
+            gen_ast_node_code(node->cond);
+        }
+        printf(" pop rax\n");
+        printf(" cmp rax, 0\n");
+        printf(" je .L.B1_%d\n", lbl_cnt);
+        gen_ast_node_code(node->left);
+        if (node->right) {
+            gen_ast_node_code(node->right);
+        }
+        printf(" jmp .L.B0_%d\n", lbl_cnt);
+        printf(".L.B1_%d:\n", lbl_cnt);
+        return;
       case AST_NUM:
         printf(" push %d\n", node->num_val);
         return;
@@ -90,24 +157,12 @@ void gen_ast_node_code(AST_Node *node) {
     printf(" push rax\n");
 }
 
-static void stack_prologue() {
-    printf(" push rbp\n");
-    printf(" mov rbp, rsp\n");
-    printf(" sub rsp, 208\n");
-}
-
-static void stack_epilogue() {
-    printf(" mov rsp, rbp\n");
-    printf(" pop rbp\n");
-    printf(" ret\n");
-}
-
 void gen_code(AST_Node **ast_forest) {
     printf(".intel_syntax_noprefix\n");
     printf(".globl _main\n");
     printf("_main:\n");
 
-    stack_prologue();
+    stack_prologue(8*64); // 64 byte stack
     for (int i = 0; ast_forest[i] != NULL; i++) {
         gen_ast_node_code(ast_forest[i]);
         printf(" pop rax\n");

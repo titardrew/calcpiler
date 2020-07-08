@@ -71,6 +71,18 @@ static Status try_eat_op_token(char *op) {
     return SUCCESS;
 }
 
+static void expect(char *sym) {
+    if (!try_eat_op_token(sym)) {
+        panic_at(
+            global_token_ptr->str, global_code,
+            "Parsing error: Wrong Token (Got %s, expected %s[\"%s\"])",
+            global_tk_repr[global_token_ptr->kind],
+            global_tk_repr[TK_RESERVED],
+            sym
+        );
+    }
+}
+
 static Token * try_eat_ident_token() {
     Token *tk = NULL;
     if (global_token_ptr->kind == TK_IDENT) {
@@ -78,6 +90,14 @@ static Token * try_eat_ident_token() {
         global_token_ptr = global_token_ptr->next;
     }
     return tk;
+}
+
+static Status try_eat_reserved_word_token(TokenKind kind) {
+    if (global_token_ptr->kind != kind) {
+        return FAILURE;
+    }
+    global_token_ptr = global_token_ptr->next;
+    return SUCCESS;
 }
 
 static Token * eat_number_token() {
@@ -93,9 +113,79 @@ static Token * eat_number_token() {
     return num_token;
 }
 
+#define CALC_MAX_TREE_WIDTH 100
+#define CALC_MAX_TREE_DEPTH 100
+static int _print_ast(AST_Node *tree, int is_left, int offset, int depth,
+                      char s[CALC_MAX_TREE_DEPTH][CALC_MAX_TREE_WIDTH],
+                      int* dst_depth) {
+    char b[20];
+
+    if (!tree) {
+        *dst_depth = (*dst_depth > depth) ? (*dst_depth) : (depth);
+        return 0;
+    }
+
+    sprintf(b, "%s", global_node_kind[tree->kind]);
+    size_t width = strlen(b);
+
+    int left  = _print_ast(
+        tree->left,
+        1,
+        offset,
+        depth + 1,
+        s,
+        dst_depth
+    );
+
+    int right = _print_ast(
+        tree->right,
+        0,
+        offset + left + width,
+        depth + 1,
+        s,
+        dst_depth
+    );
+
+    for (int i = 0; i < width; i++)
+        s[depth][offset + left + i] = b[i];
+
+    if (depth && is_left) {
+
+        for (int i = 0; i < width + right; i++)
+            s[depth - 1][offset + left + width/2 + i] = '-';
+
+        s[depth - 1][offset + left + width/2] = '.';
+
+    } else if (depth && !is_left) {
+
+        for (int i = 0; i < left + width; i++)
+            s[depth - 1][offset - width/2 + i] = '-';
+
+        s[depth - 1][offset + left + width/2] = '.';
+    }
+
+    return left + width + right;
+}
+
+static void print_ast(AST_Node *tree) {
+    char s[CALC_MAX_TREE_DEPTH][CALC_MAX_TREE_WIDTH];
+    for (int i = 0; i < CALC_MAX_TREE_DEPTH; i++) {
+        for (int j = 0; j < CALC_MAX_TREE_WIDTH - 1; j++)
+            s[i][j] = ' ';
+        s[i][CALC_MAX_TREE_WIDTH - 1] = '\0';
+    }
+    int max_depth = 0;
+    _print_ast(tree, 0, 0, 0, s, &max_depth);
+    for (int i = 0; i < max_depth; i++)
+        fprintf(stderr, "%s\n", s[i]);
+}
+
 /* Grammar (EBNF):
      unit       := statement*
      statement  := expression ";"
+                | "return" expression ";"
+                | "if" "(" expression ")" statement ("else" statement)?
+                | "while" "(" expression ")" statement
      expression := assign
      assign     := equality ("=" assign)?
      equality   := comparison ("==" comparison | "!=" comparison)*
@@ -129,21 +219,70 @@ AST_Node ** parse_unit(char *code, Token *tokens) {
     int i = 0;
     while (global_token_ptr->kind != TK_EOF) {
         ast_forest[i++] = parse_statement();
+#ifdef DEBUG_PARSER
+        print_ast(ast_forest[i - 1]);
+#endif
     }
     ast_forest[i] = NULL;
     return ast_forest;
 }
 
-// statement := expression ";"
+/*
+     statement  := expression ";"
+                | "return" expression ";"
+                | "if" "(" expression ")" statement ("else" statement)?
+                | "while" "(" expression ")" statement
+*/
 static AST_Node * parse_statement() {
-    AST_Node *node = parse_expression();
-    if (!try_eat_op_token(";")) {
-        panic_at(
-            global_token_ptr->str, global_code,
-            "Parsing error: Wrong Token (Got %s, expected %s[';'])",
-            global_tk_repr[global_token_ptr->kind], global_tk_repr[TK_RESERVED]
-        );
+    AST_Node *node;
+    if (try_eat_reserved_word_token(TK_RET)) {
+        node = (AST_Node *)calloc(1, sizeof(AST_Node));
+        node->kind = AST_RET;
+        node->right = NULL;
+        node->left = parse_expression();
+        expect(";");
+    } else if (try_eat_reserved_word_token(TK_IF)) {
+        expect("(");
+        AST_Node *cond = parse_expression();
+        expect(")");
+        AST_Node *body = parse_statement();
+        AST_Node *else_body = NULL;
+        if (try_eat_reserved_word_token(TK_ELSE)) {
+            else_body = parse_statement();
+        }
+        node = create_ast_op_node(AST_IF, body, else_body);
+        node->cond = cond;
+    } else if (try_eat_reserved_word_token(TK_WHILE)) {
+        expect("(");
+        AST_Node *cond = parse_expression();
+        expect(")");
+        node = create_ast_op_node(AST_WHILE, parse_statement(), NULL);
+        node->cond = cond;
+    } else if (try_eat_reserved_word_token(TK_FOR)) {
+        AST_Node *init  = NULL;
+        AST_Node *cond  = NULL;
+        AST_Node *right = NULL;
+        expect("(");
+        if (!try_eat_op_token(";")) {
+            init = parse_expression();
+            expect(";");
+        }
+        if (!try_eat_op_token(";")) {
+            cond = parse_expression();
+            expect(";");
+        }
+        if (!try_eat_op_token(")")) {
+            right = parse_expression();
+            expect(")");
+        }
+        node = create_ast_op_node(AST_FOR, parse_statement(), right);
+        node->init = init;
+        node->cond = cond;
+    } else {
+        node = parse_expression();
+        expect(";");
     }
+
     return node;
 }
 
@@ -241,6 +380,7 @@ static AST_Node * parse_unary() {
 
 // atom := num | identifier | "(" expression ")"
 static AST_Node * parse_atom() {
+
     Token * tk = try_eat_ident_token();
     if (tk) {
         return create_ast_ident_node(tk);

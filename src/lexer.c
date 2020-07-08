@@ -28,6 +28,22 @@ Token * create_token(TokenKind kind, Token *current_token,
     return new_token;
 }
 
+Status lex_reserved_word(TokenKind kind, int chars_left,
+                         char **p, Token **cur) {
+    const char *word = global_tk_repr[kind];
+    int len = strlen(word);
+    if (chars_left > len && !memcmp(*p, word, len)
+         && !is_ident_char((*p)[len]) && !isdigit((*p)[len])) {
+        *cur = create_token(kind, *cur, *p, len);
+#ifdef DEBUG_LEXER
+        fprintf(stderr, "TK[%s]->", word);
+#endif
+        *p += len;
+        return SUCCESS;
+    }
+    return FAILURE;
+}
+
 Token * tokenize(char *code) {
     char *p = code;
     Token head;
@@ -44,6 +60,18 @@ Token * tokenize(char *code) {
             continue;
         }
         chars_left -= current_token->len;
+
+        // Reserved words
+        if (lex_reserved_word(TK_RET, chars_left, &p, &current_token))
+            continue;
+        if (lex_reserved_word(TK_IF, chars_left, &p, &current_token))
+            continue;
+        if (lex_reserved_word(TK_ELSE, chars_left, &p, &current_token))
+            continue;
+        if (lex_reserved_word(TK_WHILE, chars_left, &p, &current_token))
+            continue;
+        if (lex_reserved_word(TK_FOR, chars_left, &p, &current_token))
+            continue;
 
         // Identifier
         if (chars_left >= 1 && is_ident_char(*p)) {
