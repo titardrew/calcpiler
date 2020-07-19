@@ -5,7 +5,7 @@ INCLUDE=$(wildcard src/*.h)
 OBJECTS=$(patsubst src/*.c,build/%.o,$(SOURCES))
 
 all: makedir $(OBJECTS)
-	$(CC) -o $(BUILDDIR)/compile $(OBJECTS) $(LDFLAGS) -g #-DDEBUG_LEXER
+	$(CC) -o $(BUILDDIR)/compile $(OBJECTS) $(LDFLAGS) -g #-DDEBUG_PARSER #-DDEBUG_LEXER
 
 $(OBJECTS): $(INCLUDE)
 

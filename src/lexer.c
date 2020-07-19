@@ -97,7 +97,7 @@ Token * tokenize(char *code) {
         }
 
         // 1-char ops
-        if (chars_left >= 1 && strchr("()+-*/%<>=;", *p)) {
+        if (chars_left >= 1 && strchr("()+-*/%<>=;{},", *p)) {
             current_token = create_token(TK_RESERVED, current_token, p, 1);
 #ifdef DEBUG_LEXER
             fprintf(stderr, "TK_RESERVED[%c]->", p[0]);
