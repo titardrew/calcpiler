@@ -18,14 +18,14 @@ At the moment, the compiler generates x86 assembly. Tested on OSx machine.
 
 
 # Build and run tests
-"""bash
+'''bash
     make test
-"""
+'''
 You should see the colored test output.
 
 # Example
 Current example contains simple hello-world program, that calculates 21st entry in the fibonacci sequence via recursion and loops.
 Run:
-"""bash
+'''bash
     sh compile.sh "-i example.c" example
-"""
+'''
