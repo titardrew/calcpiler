@@ -29,3 +29,4 @@ Run:
 ```bash
     sh compile.sh "-i example.c" example
 ```
+You may see the generated assembly in `example_x86.s`. There's a lot of work to be done to make it look less crappy, though.
